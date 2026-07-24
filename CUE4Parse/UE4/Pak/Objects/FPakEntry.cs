@@ -11,7 +11,6 @@ using CUE4Parse.Utils;
 using GenericReader;
 using static CUE4Parse.UE4.Objects.Core.Misc.ECompressionFlags;
 using static CUE4Parse.UE4.Pak.Objects.EPakFileVersion;
-using static CUE4Parse.UE4.Versions.EGame;
 
 namespace CUE4Parse.UE4.Pak.Objects;
 
@@ -335,12 +334,24 @@ public class FPakEntry : VfsEntry
     {
         var startOffset = Ar.Position;
 
-        if (game == GAME_GameForPeace)
+        if (game is GAME_GameForPeace or GAME_PUBGMobile or GAME_PUBGLite)
         {
             Ar.Position += 20;
             Offset = Ar.Read<long>();
             UncompressedSize = Ar.Read<long>();
-            CompressionMethod = reader.Info.CompressionMethods[Ar.Read<int>()];
+            var serializedCompressionMethod = Ar.Read<int>();
+            if (game is GAME_PUBGMobile) CustomData = serializedCompressionMethod;
+            CompressionMethod = game is GAME_PUBGMobile or GAME_PUBGLite
+                ? serializedCompressionMethod switch
+                {
+                    0 => CompressionMethod.None,
+                    1 => CompressionMethod.Zlib,
+                    6 => CompressionMethod.Zstd,
+                    7 => CompressionMethod.Oodle,
+                    152 => CompressionMethod.Zstd, // ZSTD using `mini_obbzsdic_obb` dictionary
+                    _ => CompressionMethod.Unknown
+                }
+                : reader.Info.CompressionMethods[serializedCompressionMethod];
             CompressedSize = Ar.Read<long>();
             Size = UncompressedSize;
             Ar.Position += 21;
@@ -350,6 +361,6 @@ public class FPakEntry : VfsEntry
             Flags = (uint) Ar.ReadByte();
         }
 
-        StructSize = (int) (Ar.Position - startOffset);
+        StructSize = game is GAME_PUBGMobile or GAME_PUBGLite ? 0 : (int) (Ar.Position - startOffset);
     }
 }
